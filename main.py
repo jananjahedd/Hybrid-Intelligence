@@ -7,275 +7,339 @@ face-down while declaring their rank, with opponents deciding whether
 to accept or challenge the claim. The objective is to outsmart your
 opponents by bluffing convincingly or catching them in a lie, with
 the first player to run out of cards declared the winner.
-The game is a zero order theory of mind implementation played by
+The game is a zero-order and first-order theory of mind implementation played by
 and AI vs. a human (you).
 
 """
 
 import random
-card_ranks = ['Ace', 'Jack', 'Queen', 'King']
+import logging
+import matplotlib.pyplot as plt
+from collections import defaultdict
+import numpy as np
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('game_log.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+CARD_RANKS = ['Ace', 'Jack', 'Queen', 'King']
+INITIAL_CARDS_PER_PLAYER = 5
 
 class Player:
-    """
-    this class represents a player in the game.
-
-    Attributes:
-        name (str): The name of the player.
-        is_human (bool): Whether the player is human or an AI agent.
-        cards (list): The cards currently held by the player.
-    """
-
-    def __init__(self, name, is_human=False):
-        """
-        this function initializes a player with a name, type (human or AI),
-        and an empty hand.
-
-        Args:
-            name (str): The name of the player.
-            is_human (bool): True if the player is human; False for AI.
-            Default is False.
-        """
+    def __init__(self, name, theory_of_mind_order=0, is_human=False):
         self.name = name
-        self.is_human = is_human
         self.cards = []
+        self.memory = []
+        self.order = theory_of_mind_order
+        self.is_human = is_human
+        self.opponent_beliefs = {}
+        logger.debug(f'Created player: {name} (Order: {theory_of_mind_order}, Human: {is_human})')
+
+        if theory_of_mind_order == 1:
+            for rank in CARD_RANKS:
+                self.opponent_beliefs[rank] = {
+                    'has_card': 0.5,
+                    'will_bluff': 0.3
+                }
 
     def receive_cards(self, cards):
-        """
-        this function adds the given cards to the player's hand.
-
-        Args:
-            cards (list): A list of cards to add to the
-            player's hand.
-        """
         self.cards.extend(cards)
+        logger.info(f'{self.name} received cards: {cards}')
+        logger.info(f'{self.name} updated hand: {self.cards}')
         if self.is_human:
-            print(f"your current hand: {self.cards}")
+            print(f"\nyou received cards: {', '.join(cards)}")
+            print(f"current hand: {self.cards}")
 
     def play_card(self, declared_rank):
-        """
-        this function allows the player to play a card or pass their turn.
+        if not self.cards:
+            logger.warning(f'{self.name} tried to play with empty hand')
+            return 'pass', declared_rank
 
-        Args:
-            declared_rank (str): The rank of the card to be declared.
-
-        Returns:
-            tuple: A tuple containing the played card and the declared rank.
-                   Returns ('pass', declared_rank) if the player passes.
-        """
-        declared_rank = declared_rank.capitalize()
-        if declared_rank not in card_ranks:
-            print(f"invalid rank '{declared_rank}'."
-                  f"please choose from {card_ranks}.")
-            return self.play_card(input("enter the rank again: "
-                                        ).strip().capitalize())
         if self.is_human:
-            print(f"\nyour hand: {self.cards}")
-            card = input(f"select a card to play as the {declared_rank} "
-                         f"card played? (or type 'pass'): ").strip()
-            if card.lower() == 'pass':
+            return self.human_play(declared_rank)
+        
+        return self.ai_play(declared_rank)
+
+    def human_play(self, declared_rank):
+        print(f"\nyour turn, {self.name}!")
+        print(f"current declared rank: {declared_rank}")
+        print(f"your cards: {', '.join(self.cards)}")
+ 
+        while True:
+            action = input("play a card (enter card) or pass: ").strip().capitalize()
+            if action == 'Pass':
+                logger.info(f'{self.name} passed')
                 return 'pass', declared_rank
-            elif card.capitalize() in self.cards:
-                self.cards.remove(card.capitalize())
-                return card.capitalize(), declared_rank
+            if action in self.cards:
+                self.cards.remove(action)
+                logger.info(f'{self.name} played {action} as {declared_rank}')
+                logger.info(f'{self.name} remaining cards: {self.cards}')
+                return action, declared_rank
+            print("Invalid card. Please choose from your hand or type 'pass'")
+
+    def ai_play(self, declared_rank):
+        try:
+            if self.order == 0:
+                return self.zero_order_play(declared_rank)
             else:
-                print("invalid card. try again.")
-                return self.play_card(declared_rank)
+                return self.first_order_play(declared_rank)
+
+        except IndexError:
+            logger.error(f'{self.name} tried to play with empty hand')
+            return 'pass', declared_rank
+
+    def zero_order_play(self, declared_rank):
+        """Zero-order agent uses a deterministic, rule-based approach"""
+        if declared_rank in self.cards:
+            played_card = declared_rank
         else:
-            # zero order agent - gusesses randomly
-            card = random.choice(self.cards)
-            self.cards.remove(card)
-            return card, declared_rank
+            played_card = max(set(self.cards), key=self.cards.count)
+        
+        self.cards.remove(played_card)
+        logger.info(f'{self.name} played {played_card} as {declared_rank}')
+        logger.info(f'{self.name} remaining cards: {self.cards}')
+        return played_card, declared_rank
 
-    def challenge(self, played_card, declared_rank):
-        """
-        this function decides whether to challenge the opponent's play.
+    def first_order_play(self, declared_rank):
+        """First-order agent models opponent's beliefs with adaptive learning"""
+        self.update_beliefs(declared_rank)
+        
+        expected_opponent_challenge = self.opponent_beliefs[declared_rank]['will_bluff']
+        
+        if declared_rank in self.cards:
+            if expected_opponent_challenge < 0.5:
+                played_card = declared_rank
+            else:
+                played_card = declared_rank if random.random() < 0.7 else self.smart_bluff(declared_rank)
+        else:
+            played_card = self.smart_bluff(declared_rank)
+        
+        self.cards.remove(played_card)
+        logger.info(f'{self.name} played {played_card} as {declared_rank}')
+        logger.info(f'{self.name} remaining cards: {self.cards}')
+        return played_card, declared_rank
 
-        Args:
-            played_card (str): The card played by the opponent.
-            declared_rank (str): The rank declared by the opponent.
+    def smart_bluff(self, declared_rank):
+        """Choose a bluff card based on opponent's likely cards"""
+        safe_bluffs = [c for c in self.cards 
+                      if self.opponent_beliefs.get(c, {}).get('has_card', 0.5) < 0.4]
+        return random.choice(safe_bluffs) if safe_bluffs else random.choice(self.cards)
 
-        Returns:
-            bool: True if the player chooses to challenge; False otherwise.
-        """
+    def update_beliefs(self, declared_rank):
+        """Update the belief matrix dynamically based on game history"""
+        if self.order == 1:
+            for rank in CARD_RANKS:
+                if rank == declared_rank:
+                    self.opponent_beliefs[rank]['has_card'] *= 0.7
+                else:
+                    self.opponent_beliefs[rank]['has_card'] = min(
+                        self.opponent_beliefs[rank]['has_card'] + 0.1, 0.9
+                    )
+
+    def zero_order_challenge(self, declared_rank):
+        """Zero-order agent challenges based on deterministic probability"""
+        if not self.memory:
+            return random.random() < 0.1
+        bluff_rate = sum(1 for _, r in self.memory if r != declared_rank) / len(self.memory)
+        return bluff_rate > 0.4
+
+
+    def first_order_challenge(self, declared_rank):
+        """First-order challenges based on belief matrix and observed play"""
+        p_bluff = (1 - self.opponent_beliefs[declared_rank]['has_card']) * 0.8
+        return p_bluff > 0.5
+
+    def decide_challenge(self, declared_rank):
         if self.is_human:
-            decision = input(f"do you want to challenge {declared_rank}? "
-                             f"(yes/no): ").strip().lower()
+            print(f"\n{self.name}, do you want to challenge the {declared_rank} claim?")
+            decision = input("Challenge? (yes/no): ").strip().lower()
+            logger.info(f'{self.name} decided to {"challenge" if decision == "yes" else "not challenge"}')
             return decision == 'yes'
+            
+        if self.order == 0:
+            challenge = self.zero_order_challenge(declared_rank)
+            logger.info(f'{self.name} (Zero-Order) challenge decision: {challenge}')
+            return challenge
         else:
-            # zero ordder agent - challenges randomly
-            return random.choice([True, False])
-
+            challenge = self.first_order_challenge(declared_rank)
+            logger.info(f'{self.name} (First-Order) challenge decision: {challenge}')
+            return challenge
 
 class BluffGame:
-
-    """
-    this class manages the game logic for the "Doubt It" variant of Bluff.
-
-    Attributes:
-        players (list): A list of Player objects participating in the game.
-        card_stack (list): The stack of cards played in the current round.
-        current_rank (str): The rank of cards currently being played.
-        last_player (Player): The last player to play a card.
-        round_number (int): The current round number.
-        pass_count (int): The number of consecutive passes in the current
-        round.
-        win_count (dict): A dictionary tracking the number of wins for each
-        player.
-    """
-
     def __init__(self, players):
-        """
-        this funcion initializes the game with the given players.
-
-        Args:
-            players (list): A list of Player objects.
-        """
         self.players = players
-        self.card_stack = []
+        self.deck = CARD_RANKS * 4
         self.current_rank = None
-        self.last_player = None
-        self.round_number = 1
-        self.pass_count = 0
-        self.win_count = {player.name: 0 for player in players}
-
-    def distribute_cards(self):
-        """
-        this function distributes cards evenly among the players at
-        the start of the game.
-        """
-        all_cards = card_ranks * 4
-        random.shuffle(all_cards)
-        num_players = len(self.players)
-        cards_per_player = len(all_cards) // num_players
-        for player in self.players:
-            player.receive_cards(all_cards[:cards_per_player])
-            all_cards = all_cards[cards_per_player:]
-
-    def start_round(self):
-        """
-        this function is for tarting a new round of the game.
-        The players take turns to play cards/pass,
-        and challenges are resolved when they occur.
-        """
+        self.last_passer = None
+        self.winner = None
+        self.history = []
         self.card_stack = []
-        self.current_rank = input("enter the starting rank for this round " +
-                                  "(Ace/Jack/Queen/King): "
-                                  ).strip().capitalize()
-        if self.current_rank not in card_ranks:
-            print(f"invalid rank '{self.current_rank}'. please choose:"
-                  f"from {card_ranks}.")
-            self.start_round()
-            return
-        self.pass_count = 0
-        current_player_idx = 0
+        self.rounds = 0
+        #Use of AI for formatting inspiration
+        logger.info('\n\n=== Starting new game ===')
+        
+    def setup_game(self):
+        random.shuffle(self.deck)
+        logger.info('Initial hands:')
+        for p in self.players:
+            cards_to_deal = self.deck[:INITIAL_CARDS_PER_PLAYER]
+            p.receive_cards(cards_to_deal)
+            self.deck = self.deck[INITIAL_CARDS_PER_PLAYER:]
+        logger.info('Cards dealt to players')
 
-        while True:
-            player = self.players[current_player_idx]
-            print(f"\n{player.name}'s turn")
-            card, declared_rank = player.play_card(self.current_rank)
-
-            if card == 'pass':
-                print(f"{player.name} passes.")
-                self.pass_count += 1
-                if self.pass_count >= len(self.players):
-                    print("all players passed. starting a new round.")
-                    self.current_rank = input("enter rank for the new round: "
-                                              ).strip().capitalize()
-                    if self.current_rank not in card_ranks:
-                        print(f"invalid rank '{self.current_rank}'. "
-                              f"please choose from {card_ranks}.")
-                        self.start_round()
-                        return
-                    self.pass_count = 0
-                current_player_idx = (current_player_idx + 1
-                                      ) % len(self.players)
-                continue
-
-            self.card_stack.append((card, declared_rank))
-            print(f"{player.name} plays {declared_rank}.")
-            self.last_player = player
-
-            next_player_idx = (current_player_idx + 1) % len(self.players)
-            next_player = self.players[next_player_idx]
-
-            if next_player.is_human:
-                challenge = input(f"do you want to challenge the "
-                                  f"{declared_rank} card played? (yes/no): "
-                                  ).strip().lower() == 'yes'
-            else:
-                challenge = next_player.challenge(card, declared_rank)
-                print(f"{next_player.name} decides to"
-                      f" {'challenge' if challenge else 'not challenge'}.")
-
-            if challenge:
-                self.handle_challenge(next_player, card, declared_rank)
-                return
-
-            current_player_idx = next_player_idx
-
-    def handle_challenge(self, challenger, played_card, declared_rank):
-        """
-        this function resolves a challenge by checking the validity of
-        the last played card.
-
-        Args:
-            challenger (Player): The player who issued the challenge.
-            played_card (str): The card being challenged.
-            declared_rank (str): The rank declared with the card.
-        """
-        print(f"\n{challenger.name} challenges the play!")
-        last_played_card, last_declared_rank = self.card_stack.pop()
-
-        if last_played_card.lower() != declared_rank.lower():
-            print(f"The challenge succeeds! {challenger.name} wins this round."
-                  f"{self.last_player.name} played {last_played_card}.")
-            self.card_stack = [last_played_card] + [
-                card for card, _ in self.card_stack]
-            self.last_player.receive_cards(self.card_stack)
-            print(f"{self.last_player.name} gets the cards from this round")
-            self.win_count[challenger.name] += 1
-        else:
-            print(f"The challenge fails! {challenger.name} loses this round. "
-                  f"{self.last_player.name} played {last_played_card}.")
-            self.card_stack = [last_played_card] + [
-                card for card, _ in self.card_stack]
-            challenger.receive_cards(self.card_stack)
-            print(f"{challenger.name} receives all the cards from this round.")
-            self.win_count[self.last_player.name] += 1
-
-        self.card_stack.clear()
-
-    def play_game(self):
-        """
-        this function manages the overall flow of the game, including rounds
-        and end conditions.
-        """
-        print("Starting the game!")
-        self.distribute_cards()
-        while all(len(player.cards) > 0 for player in self.players):
-            self.start_round()
-
+    def log_player_hands(self):
+        logger.info('Current hands:')
         for player in self.players:
-            if len(player.cards) == 0:
-                print(f"\n{player.name} wins the game!")
-                self.win_count[player.name] += 1
-                break
+            logger.info(f'{player.name}: {player.cards}')
 
-        print("\nGame Over! Final Win Count:")
-        for name, wins in self.win_count.items():
-            print(f"{name}: {wins} wins")
+    def check_winner(self):
+        for p in self.players:
+            if not p.cards:
+                self.winner = p
+                logger.info(f'Game winner: {p.name}')
+                return True
+        return False
+            
+    def play_round(self):
+        #Use of AI for formatting inspiration
+        logger.info('\n--- Starting new round ---')
+        self.log_player_hands()
+        if self.check_winner():
+            return
+        
+        self.rounds += 1
+            
+        starter = self.last_passer or self.players[0]
+        self.current_rank = random.choice(CARD_RANKS)
+        logger.info(f'New round declared rank: {self.current_rank}')
+        current_player = starter
+        pass_count = 0
+        
+        while True:
+            if self.check_winner():
+                return
+                
+            if not current_player.cards:
+                current_player = self.next_player(current_player)
+                continue
+                
+            logger.info(f"{current_player.name}'s turn")
+            action = current_player.play_card(self.current_rank)
+            
+            if action[0] == 'pass':
+                logger.info(f'{current_player.name} passed')
+                self.last_passer = current_player
+                pass_count += 1
+                if pass_count >= len(self.players):
+                    logger.info('All players passed')
+                    return
+                current_player = self.next_player(current_player)
+                continue
+                
+            card, declared_rank = action
+            self.history.append((current_player, card, declared_rank))
+            self.card_stack.append(card)
+            
+            for challenger in self.players:
+                if challenger != current_player and challenger.cards:
+                    if challenger.decide_challenge(declared_rank):
+                        logger.info(f'{challenger.name} challenges {current_player.name}')
+                        return self.resolve_challenge(challenger, current_player, card, declared_rank)
+                    
+            current_player = self.next_player(current_player)
+            pass_count = 0
 
+    def next_player(self, current_player):
+        idx = self.players.index(current_player)
+        return self.players[(idx + 1) % len(self.players)]
 
-def main():
+    def resolve_challenge(self, challenger, player, card, declared_rank):
+        logger.info(f'Resolving challenge: {card} vs {declared_rank}')
+        logger.info(f'Cards in play: {self.card_stack}')
+        
+        if card != declared_rank:
+            logger.info(f'Challenge succeeded! {challenger.name} wins')
+            player.receive_cards(self.card_stack)
+        else:
+            logger.info(f'Challenge failed! {player.name} wins')
+            challenger.receive_cards(self.card_stack)
+            
+        self.card_stack.clear()
+        self.log_player_hands()
+        return True
 
-    human_player = Player(name="Human", is_human=True)
-    zero_order_agent = Player(name="Zero-Order AI")
-    players = [human_player, zero_order_agent]
+    def run_full_game(self):
+        self.setup_game()
+        while not self.winner:
+            self.play_round()
+            self.check_winner()
+        return self.winner, self.rounds
 
-    game = BluffGame(players)
-    game.play_game()
+class ExperimentRunner:
+    def __init__(self):
+        self.results = defaultdict(lambda: defaultdict(int))
+        self.human_results = defaultdict(int)
+        self.rounds_data = {
+            'human_vs_zero': [],
+            'human_vs_first': []
+        }
+
+    def run_agent_experiment(self, num_games=100):
+        logger.info('Starting agent experiments')
+        for _ in range(num_games):
+            players = [
+                Player("Zero-Order", 0),
+                Player("First-Order", 1)
+            ]
+            game = BluffGame(players)
+            winner, _ = game.run_full_game()
+            self.results['agent_vs_agent'][winner.order] += 1
+
+        # Save the results plot
+        plt.figure(figsize=(6, 4))
+        labels = ['Zero-Order', 'First-Order']
+        values = [self.results['agent_vs_agent'][0], self.results['agent_vs_agent'][1]]
+        plt.bar(labels, values, color=['blue', 'orange'])
+        plt.title('Agent vs Agent Win Rates')
+        plt.ylabel('Wins')
+        plt.savefig('Finalrun.png')
+        print("saved image")
+
+    def run_human_experiment(self, games_per=5, num_participants=5):
+        logger.info('Starting human experiments')
+        for participant in range(1, num_participants + 1):
+            for agent_type in ['zero', 'first']:
+                for game_num in range(1, games_per + 1):
+                    human = Player(f"Participant-{participant}", is_human=True)
+                    agent = Player(f"{agent_type}-agent", 0 if agent_type == 'zero' else 1)
+
+                    logger.info(f'Starting game {game_num} for participant {participant} vs {agent_type}-agent')
+                    game = BluffGame([human, agent])
+                    winner, rounds = game.run_full_game()
+                    self.rounds_data[f'human_vs_{agent_type}'].append(rounds)
+
+                    if winner.is_human:
+                        self.human_results[agent_type] += 1
+
+        with open('rounds_data.txt', 'w') as f:
+            f.write("Human vs Zero-Order Rounds:\n")
+            f.write(", ".join(map(str, self.rounds_data['human_vs_zero'])) + "\n")
+            f.write("Human vs First-Order Rounds:\n")
+            f.write(", ".join(map(str, self.rounds_data['human_vs_first'])) + "\n")
+        print("saved txt file'")
 
 
 if __name__ == "__main__":
-    main()
+    exp = ExperimentRunner()
+
+    print("Running agent experiments...")
+    exp.run_agent_experiment(num_games=100)
+
+    print("\nStarting human experiments...")
+    exp.run_human_experiment(games_per=5, num_participants=5)
