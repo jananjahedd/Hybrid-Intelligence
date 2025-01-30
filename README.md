@@ -1,98 +1,106 @@
-# Hybrid-Intelligence - Bluff game, variant Doubt it
-(At the moment for the zero-order theory of mind implementation everything is in a main.py file but for the final submission I will seperate the classes and use inheritance for code readability)
+# **Hybrid-Intelligence - Bluff Game (Doubt It Variant)**  
 
+## **Overview**  
+This project implements a **strategic bluffing game** known as **"Doubt It"** to evaluate **Theory of Mind (ToM) strategies** in AI agents. The primary focus is on **Zero-Order and First-Order ToM agents**, with a human-agent interaction component.  
 
+The objective is to **analyze how different levels of ToM affect strategic behavior**, particularly in bluffing dynamics and challenge decisions. The AI agents in this implementation operate under **varying ToM capabilities**, allowing for controlled comparisons between zero-order (rule-based, deterministic) and first-order (adaptive, opponent-aware) strategies.  
 
-## Overview
-The Bluff Game, or "Doubt It," is a strategic card game in which the players aim to outplay their rivals by bluffing convincingly or catching them lying/bluffing. This code implementation features a human player competing against a Zero-Order AI agent. The end goal is to be the first player to run out of cards by successfully playing cards or detecting the opponent's bluffs.
+---
 
+## **Game Description**  
 
-## Game Description
-### Concept
-- **Players**: Human vs. AI (Zero-Order Agent).
-- **Objective**: Run out of cards before your opponent by:
-  - Bluffing convincingly (playing a card and declaring a potentially false rank).
-  - Detecting when your opponent is bluffing and issuing a challenge.
+### **Concept**  
+- **Players:** Human vs. AI (Zero-Order or First-Order Agent).  
+- **Objective:** Be the first player to run out of cards by successfully playing cards or **challenging an opponent's bluff**.  
+- **Gameplay Structure:**  
+  - Players take turns playing a card **face-down** while declaring its rank.  
+  - Opponents may either **accept the play** or **issue a challenge**.  
+  - If a challenge is issued, the actual card is revealed to determine the winner of the round.  
 
-### How It Works
-- Players take turns playing their faced-down cards. At the beginning of the game, the first player declares a rank. The players should put a true card that is the same as the starting rank or bluff their way out of the round. 
-- Opponents can choose to accept the play or challenge the players guess.
-- If they challenged:
-  - The actual card played is revealed to verify if it is the same as the declared rank.
-  - Based on the result, the challenger or the player collects all the cards played in the current round.
-- The game continues until one player runs out of cards. This player will be the winner of the game. 
+### **Rules**  
+1. A deck consists of four copies of each rank (**Ace, Jack, Queen, King**).  
+2. Cards are **shuffled** and distributed equally between the two players.  
+3. Players take turns **declaring and playing a card** (truthfully or as a bluff).  
+4. The opponent can **accept the play or challenge it**.  
+5. If challenged, the played card is revealed:  
+   - If the challenge is **correct**, the bluffing player collects all played cards.  
+   - If the challenge is **incorrect**, the challenger collects all played cards.  
+6. The game continues until **one player runs out of cards**, winning the match.  
 
+---
 
-## Features
-- **Zero-Order Theory of Mind AI**:
-  - The AI does not model or infer the mental state of the human player.
-  - It selects moves randomly without any strategy based on the human player's behavior.
+## **AI Behavior**  
 
-- **Human-Agent Interaction**:
-  - Allows human players to challenge the AI’s moves.
-  - Provides input prompts and displays the current state of the game.
+### **Zero-Order Theory of Mind Agent**  
+- **Does not model opponent beliefs or intentions**.  
+- Decision-making is **entirely deterministic and rule-based**, without tracking previous moves.  
+- Bluffing strategy:  
+  - **If the agent has the declared rank, it plays truthfully**.  
+  - **If the agent does not have the declared rank, it plays the most frequent card in its hand** as a bluff.  
+- Challenge behavior:  
+  - If no prior memory of bluffing is available, the agent **challenges with a fixed probability (10%)**.  
+  - If past bluffs have been detected, the agent **estimates a bluff rate** and challenges when it exceeds a predefined threshold (40%).  
 
+### **First-Order Theory of Mind Agent**  
+- **Models opponent behavior and adapts strategies dynamically**.  
+- Uses an **opponent belief matrix** to track the likelihood that the opponent holds specific ranks.  
+- Bluffing strategy:  
+  - If the agent has the declared rank, it **plays truthfully unless it predicts a challenge**.  
+  - If bluffing, it **chooses a card that minimizes the risk of being caught** based on past opponent behavior.  
+- Challenge behavior:  
+  - The agent calculates **bluff probability based on its belief model**.  
+  - If the opponent is predicted to be bluffing (belief probability exceeds 50%), the agent challenges.  
 
-## Rules
-### Game Setup
-1. A standard deck of cards (Ace, Jack, Queen, King; 4 copies of each).
-2. Cards are shuffled and distributed between the 2 players equally.
+---
 
+## **Experimental Setup**  
+- The experiment consists of two primary configurations:  
+  1. **Agent vs. Agent**:  
+     - **First-Order vs. Zero-Order Agent** over **100 simulated games**.  
+  2. **Human vs. Agent**:  
+     - **Human participants play against both zero-order and first-order agents**.  
+     - Each participant completes **five games** against each agent type.  
+- The experiment measures:  
+  - **Win rates for each agent and human participants**.  
+  - **Number of rounds per game** (to assess strategic complexity).  
+  - **Challenge frequency and accuracy**.  
 
-## AI Behavior
-- The AI (Zero-Order Agent) performs actions based solely on its own cards.
-- Decision-making:
-  - Randomly selects a card to play.
-  - Randomly decides whether to challenge the human player's declared rank.
+---
 
+## **File Structure**  
+- `main.py`: Primary game loop and execution logic. Contains all the necessary classes.
+- `ploy.py`: For plotting the human vs. agent results. 
+---
 
-## How to Play
-1. Run the game script (`main.py`).
-2. The game will prompt the human player for their actions during their turn.
-3. Follow the prompts to:
-   - Declare a card rank.
-   - Play a card or pass.
-   - Decide whether to challenge the AI's play.
-4. Observe the game's feedback to see the result of each action.
-5. Continue playing rounds until one player wins.
+## **Requirements**  
+- Python 3.6+  
+- **Required Libraries:**  
+  - `numpy`  
+  - `matplotlib` (for result visualization)  
 
+---
 
-## File Structure
-- **main.py**: Entry point of the game. Contains the logic for setting up and running the game.
-- **Classes**:
-  - `Player`: Represents a human or AI player.
-  - `BluffGame`: Manages game logic, rounds, and win conditions.
-
-
-## Example Gameplay
-1. **Start Round**:
-   - Human declares the starting rank as "Ace."
-   - Human plays a card and declares it as "Ace."
-2. **AI’s Turn**:
-   - AI randomly plays a card and declares it as "Ace."
-   - Human decides to challenge.
-3. **Challenge Resolution**:
-   - If AI’s card is not "Ace," AI collects all cards.
-   - If AI’s card is "Ace," Human collects all cards.
-4. The game continues until one player runs out of cards.
-
-
-## Requirements
-- Python 3.6+
-- No external libraries required.
-
-
-## How to Run
-1. Clone the repository.
-2. Navigate to the folder containing `main.py`.
-3. Run the script:
+## **How to Run**  
+1. Clone the repository:  
+   ```bash
+   git clone https://github.com/jananjahedd/Hybrid-Intelligence.git
+   cd Hybrid-Intelligence
+   ```  
+2. Run the main script:  
    ```bash
    python main.py
-   ```
+   ```  
+3. Follow the on-screen prompts to play against the AI.  
 
+---
 
-## Future Enhancements
-- Add first-order Theory of Mind AI to predict and counter human strategies.
-- Use OOP principles to fix readability
+## **Future Enhancements**  
+- Implement **second-order Theory of Mind agents** capable of reasoning about **nested beliefs**.  
+- Improve **opponent modeling for human players** (adaptive learning strategies).  
+- Optimize game AI to **adjust difficulty dynamically based on human playstyle**.  
+- Expand to **multi-agent settings** for broader strategic interaction analysis.  
 
+---
 
+### **Final Notes**  
+This project contributes to research on **Theory of Mind in AI** by examining **how different cognitive models influence decision-making in strategic settings**. The results have implications for designing AI that can **reason about human behavior** in applications such as **negotiation, deception detection, and adaptive decision-making**.  

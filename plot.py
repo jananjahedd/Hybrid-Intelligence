@@ -56,6 +56,7 @@ def plot_results():
     plt.tight_layout()
     plt.show()
 
+
 parse_log_file(log_file)
 plot_results()
 
